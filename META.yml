@@ -1,15 +1,23 @@
 --- #YAML:1.0
-name:                AMF-Connection
-version:             0.10
-abstract:            A simple library to write AMF clients.
-license:             ~
-author:              
+name:               AMF-Connection
+version:            0.20
+abstract:           A simple library to write AMF clients.
+author:
     - Alberto Attilio Reggiori, <areggiori@cpan.org>
-generated_by:        ExtUtils::MakeMaker version 6.42
-distribution_type:   module
-requires:     
-    LWP::UserAgent:                5.829
-    Storable::AMF:                 0.71
+license:            unknown
+distribution_type:  module
+configure_requires:
+    ExtUtils::MakeMaker:  0
+build_requires:
+    ExtUtils::MakeMaker:  0
+requires:
+    LWP::UserAgent:  5.829
+    Storable::AMF:   0.71
+no_index:
+    directory:
+        - t
+        - inc
+generated_by:       ExtUtils::MakeMaker version 6.56
 meta-spec:
-    url:     http://module-build.sourceforge.net/META-spec-v1.3.html
-    version: 1.3
+    url:      http://module-build.sourceforge.net/META-spec-v1.4.html
+    version:  1.4

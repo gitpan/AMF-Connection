@@ -8,12 +8,12 @@ use AMF::Connection::InputStream;
 use LWP::UserAgent;
 use HTTP::Cookies;
 
-use Data::Dumper; #for debug
+#use Data::Dumper; #for debug
 
 use Carp;
 use strict;
 
-our $VERSION = '0.10';
+our $VERSION = '0.20';
 
 our $HASMD5 = 0;
 {
@@ -58,6 +58,40 @@ sub new {
 
 # plus add paramters, referer, user agent, authentication/credentials ( see also SecureAMFChannel stuff ), 
 # plus timezone on retunred dates to pass to de-serializer - see AMF3 spec saying "it is suggested that time zone be queried independnetly as needed" - unelss local DateTime default to right locale!
+
+# we pass the string, and let Storable::AMF to parse the options into a scalar - see Input/OutputStream and Storable::AMF0 documentation
+
+sub setInputAMFOptions {
+	my ($class, $options) = @_;
+
+	$class->{'input_amf_options'} = $options;
+	};
+
+sub setOutputAMFOptions {
+	my ($class, $options) = @_;
+
+	$class->{'output_amf_options'} = $options;
+	};
+
+# useful when input and output options are the same
+sub setAMFOptions {
+	my ($class, $options) = @_;
+
+	$class->setInputAMFOptions ($options);
+	$class->setOutputAMFOptions ($options);
+	};
+
+sub getInputAMFOptions {
+	my ($class) = @_;
+
+	return $class->{'input_amf_options'};
+	};
+
+sub getOutputAMFOptions {
+	my ($class) = @_;
+
+	return $class->{'output_amf_options'};
+	};
 
 sub setEndpoint {
 	my ($class, $endpoint) = @_;
@@ -195,7 +229,7 @@ sub call {
 
 	$request->addBody( $body );
 
-	my $request_stream = new AMF::Connection::OutputStream();
+	my $request_stream = new AMF::Connection::OutputStream($class->{'output_amf_options'});
 
 	# serialize request
 	$request->serialize($request_stream);
@@ -214,7 +248,7 @@ sub call {
 	croak "HTTP POST error: ".$http_response->status_line."\n"
 		unless($http_response->is_success);
 
-	my $response_stream = new AMF::Connection::InputStream( $http_response->content );
+	my $response_stream = new AMF::Connection::InputStream( $http_response->content, $class->{'input_amf_options'});
 	my $response = new AMF::Connection::Message;
 	$response->deserialize( $response_stream );
 
@@ -355,11 +389,61 @@ AMF::Connection is meant to provide a simple AMF library to write client applica
 
 The module includes basic support for synchronous HTTP/S based RPC request-response access, where the client sends a request to the server to be processed and the server returns a response to the client containing the processing outcome. Data is sent back and forth in AMF binary format (AMFChannel). Other access patterns such as pub/sub and channels transport are out of scope of this inital release.
 
-AMF0 and AMF3 support is provided using the Storable::AMF module. While HTTP/S requestes to the AMF endpoint are carried out using the LWP::UserAgent module. The requests are sent using the HTTP POST method as AMF0 encoded data by default. AMF3 encoding can be set using the setEncoding() method. Simple AMF3 Externalized Object support is provided on returned objects from the server. Objects returned are simply left in bless( { ... }, 'something') form and they could be mapped to local to the client abstractions if needed. Dates are left encoded as AMF timestamps which represent the number of milliseconds since the epoch (if required DataTime could be used dividing by 1000 the input timestamp and set timezone accordingly). If encoding is set to AMF3 the Flex Messaging framework is used on returned responses content (I.e. objects casted to "flex.messaging.messages.AcknowledgeMessage" and "flex.messaging.messages.ErrorMessage" are returned).
+AMF0 and AMF3 support is provided using the Storable::AMF module. While HTTP/S requestes to the AMF endpoint are carried out using the LWP::UserAgent module. The requests are sent using the HTTP POST method as AMF0 encoded data by default. AMF3 encoding can be set using the setEncoding() method. Simple AMF3 Externalized Object support is provided on returned objects from the server. Objects returned are simply left in bless( { ... }, 'something') form and they could be mapped to local to the client abstractions if needed. 
+
+If encoding is set to AMF3 the Flex Messaging framework is used on returned responses content (I.e. objects casted to "flex.messaging.messages.AcknowledgeMessage" and "flex.messaging.messages.ErrorMessage" are returned).
 
 Simple batch requests and responses is provided also.
 
 See the sample usage synopsis above to start using the module.
+
+=head1 DATE TYPE SUPPORT
+
+The latest 0.79 version of Storable::AMF added basic date support with the new_date() and perl_date() utilitiy functions. This is just great. Internally an AMF Date Type represents a timestamp in milliseconds since the epoch in UTC ("neutral") timezone, and since Storable::AMF version 0.79 the module shields the user from that by automatically converting Date values to Perl double (number) scalar values. Users which require AMF Date support should import the new_date() and perl_date() date manipulation functions into their code like:
+
+ use Storable::AMF qw(new_date perl_date);
+
+and make sure any date passed to an AMF::Connection as parameter is encoded with new_date().
+
+=head2 OPEN ISSUES AND SHORTCOMINGS
+
+There is still an issue when arbitrary Date structures are returned from an AMF server to an AMF::Connection (E.g. as part of values of structured AMF Objects). In this case, the AMF::Connection does not try to reparse the Perl object structure returned by Storable::AMF (see thaw()), plus the Storable::AMF module thaw() function does simply deserialise AMF Date Type as number (double) of *milli* seconds since the epoch, and the perl_date() function must be called on each returned value instead. The Storable::AMF module author says that there were other issues in enoforcing a conversion (division by 1000) of the AMF server side (and controlled) timestamp values on each thaw() automatically; hopefully future releases of the module will address this problem.
+
+All this means that an AMF::Connection client application can not rely on those Date returned by the server as being Perl timestamps (seconds since the epoch) and will need explicitly call perl_date() or divide the timestamp by 1000 *explicitly*.
+
+=head2 USING OLD Storable::AMF VERSIONS
+
+In older versions (pre 0.79) of Storable::AMF there was no support for the AMF0/AFM3 Date Type, and everything was being passed as string to the server (E.g. "2010-09-22T02:34:00"). Or as double (number) if the date was in timestamp seconds since the epoch. This meant that an AMF::Connection in order to send a date (E.g. as parameter) had to multiply (or divide) by 1000 the timestamp (E.g. for $perl_timestamp=time(); my $amf_timestamp = $perl_timestamp*1000 vs. my $perl_timestamp = $amf_timestamp/1000), plus rely on the AMF server to cast timestamp AMF Numbers to Dates (I.e. which seems to work on most AMF servers in Java which cast Number to java.util.Date() or similar).
+
+=head1 MAPPING OBJECTS
+
+By combining the power of Perl bless {}, $package_name syntax and the Storable::AMF freeze()/thaw() interface, it is possible to pass arbitrary structured AMF Objects the corresponding AMF server can interpret. This is possible due a simple Perl object reference to an hash is serialised to an AMF Object and can be mapped back on the server side. 
+
+This means that an AMF::Connection application can wrap all ActionScript / Flex AMF Objects around Perl Objects and get them sent; and returned into a Perl object BLOB using the power of Storable::AMF freeze()/thaw().A
+
+For example to send a SearchQueryFx AMF Object to the server an AMF::Connection advanced search call(), the following code could be used:
+
+my $client = new AMF::Connection ( ... );
+
+# ... prepare parameters...
+
+my $searchAMFObject = bless( {
+                   'searchId' => $searchId,
+                   'startHit' => int($startHit),
+                   'searchString' => $searchString,
+                   'hitsPerPage' => ($hitsPerPage) ? int($hitsPerPage) : 20,
+                   'sortId' => $sortId,
+       }, 'com.mycompany.application.flex.data.SearchQueryFx');
+
+my $response = $client->call( "MySearchSevice.searchAdvanced", [ $searchAMFObject ] );
+
+#....
+
+For other Java to ActionScript type mappings possibilities see http://livedocs.adobe.com/blazeds/1/javadoc/flex/messaging/io/amf/ActionMessageOutput.html#writeObject(java.lang.Object)
+
+For PHP gateways at the moment there is not a known/documented way to map client to server objects.
+
+Future versions of AMF::Connection may add a proper configurable factory for application specific ActionScript/Flex object mappings.
 
 =head1 METHODS
 
@@ -419,10 +503,34 @@ Return the current HTTP::Cookies jar in use.
 
 Minimal support for AMF authentication. Password seems to be wanted in clear.
 
+=head2 setInputAMFOptions($options)
+
+Set input stream parsing options. See Storable::AMF0 for available options.
+
+=head2 setOutputAMFOptions($options)
+
+Set output stream serialization options. See Storable::AMF0 for available options.
+
+=head2 setAMFOptions($options)
+
+Set input and output options the same. See Storable::AMF0 for available options.
+
+=head2 getInputAMFOptions()
+
+Get input stream parsing options.
+
+=head2 getOutputAMFOptions()
+
+Get output stream serialization options.
+
+=head1 CODE
+
+See http://github.com/areggiori/AMF-Connection
+
 =head1 SEE ALSO
 
  AMF::Connection::MessageBody
- Storable::AMF, LWP::UserAgent
+ Storable::AMF, Storable::AMF0, LWP::UserAgent
 
  Flex messaging framework / LiveCycle Data Services
   http://livedocs.adobe.com/blazeds/1/javadoc/flex/messaging/io/amf/client/package-summary.html
@@ -443,9 +551,13 @@ Minimal support for AMF authentication. Password seems to be wanted in clear.
 
 Alberto Attilio Reggiori, <areggiori at cpan dot org>
 
+=head1 THANKS
+
+Anatoliy Grishayev for prompt support and developments on Storable::AMF
+
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2010 by Alberto Attilio Reggiori
+Copyright (C) 2010-2011 by Alberto Attilio Reggiori
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.10.0 or,

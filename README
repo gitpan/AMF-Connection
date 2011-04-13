@@ -1,5 +1,5 @@
-AMF-Connection version 0.10
-===========================
+AMF-Connection
+==============
 
 A simple module to write AMF [1] clients to invoke remote services as used by Flex/AIR RIAs.
 
@@ -9,6 +9,8 @@ containing the processing outcome. Data is sent back and forth in AMF binary for
 such as pub/sub and channels transport are out of scope of this inital release.
 
 [1] http://en.wikipedia.org/wiki/Action_Message_Format
+
+See public github repo http://github.com/areggiori/AMF-Connection
 
 INSTALLATION
 
