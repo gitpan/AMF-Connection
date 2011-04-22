@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               AMF-Connection
-version:            0.20
+version:            0.21
 abstract:           A simple library to write AMF clients.
 author:
     - Alberto Attilio Reggiori, <areggiori@cpan.org>
